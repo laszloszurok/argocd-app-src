@@ -1,0 +1,51 @@
+name: ArgoCD test pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Login to OCI Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: fra.ocir.io
+          username: ${{ secrets.OCI_USERNAME }}
+          password: ${{ secrets.OCI_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: fra.ocir.io/fr9e19vu73mf/argocd-test:${{ github.run_number }}
+
+  update_manifest:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          repository: 'laszloszurok/argocd-app-manifest'
+          token: ${{ secrets.GIT_TOKEN }}
+
+      - name: Update the image tag
+        run: |
+          git config user.name githubactions
+          git config user.email '48314396+laszloszurok@users.noreply.github.com'
+          sed -i "s+eu-frankfurt-1.ocir.io/fr9e19vu73mf/argocd-test.*+eu-frankfurt-1.ocir.io/fr9e19vu73mf/argocd-test:$RUN_NUMBER+g" deployment.yaml
+          git add .
+          git commit -m "Update manifests. RUN_NUMBER: $RUN_NUMBER"
+          git push origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_NUMBER: ${{ github.run_number }}
